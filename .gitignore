@@ -1,0 +1,24 @@
+# 보안 파일 (절대 GitHub에 올리면 안됨!)
+credentials.json
+*.json
+!package.json
+
+# 환경변수
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
