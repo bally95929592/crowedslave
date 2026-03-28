@@ -3,6 +3,7 @@ credentials.json
 *.json
 !package.json
 !vercel.json
+!dashboard_data.json
 
 # 환경변수
 .env
