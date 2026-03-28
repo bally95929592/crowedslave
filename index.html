@@ -153,27 +153,21 @@ td.down{color:var(--red);}
     <div id="insightList"></div>
   </div>
 
-  <!-- 메타 소재 분석 (플레이스홀더) -->
-  <div class="meta-section">
-    <h3>메타 소재 분석 <span class="meta-badge">API 연동 필요</span></h3>
-    <div class="meta-placeholder">
-      <div class="meta-ad-card"><div class="thumb">소재 미리보기</div><div class="metrics">CPC: - | CTR: - | CPA: -</div></div>
-      <div class="meta-ad-card"><div class="thumb">소재 미리보기</div><div class="metrics">CPC: - | CTR: - | CPA: -</div></div>
-      <div class="meta-ad-card"><div class="thumb">소재 미리보기</div><div class="metrics">CPC: - | CTR: - | CPA: -</div></div>
+  <!-- 메타 소재 분석 (실데이터 연동) -->
+  <div class="meta-section" id="metaSection">
+    <h3>메타 소재 분석 <span class="meta-badge" id="metaBadge" style="display:none;">로딩중</span></h3>
+
+    <!-- 소구점별 성과 요약 -->
+    <div id="appealSummary" style="display:none;margin-bottom:20px;">
+      <h4 style="font-size:14px;color:var(--text-dim);margin-bottom:12px;">소구점별 성과</h4>
+      <div id="appealBars"></div>
     </div>
-    <div class="setup-guide" style="margin-top:20px;">
-      <h4>Meta Marketing API 연동 가이드</h4>
-      <ol>
-        <li><a href="https://developers.facebook.com" style="color:var(--blue);" target="_blank">developers.facebook.com</a> 에서 앱을 생성합니다.</li>
-        <li>앱에 <strong>Marketing API</strong> 제품을 추가합니다.</li>
-        <li><code>ads_read</code> 권한이 포함된 사용자 액세스 토큰을 발급받습니다.</li>
-        <li>장기 토큰(60일)으로 교환합니다:
-          <br><code>GET /oauth/access_token?grant_type=fb_exchange_token&client_id=APP_ID&client_secret=APP_SECRET&fb_exchange_token=SHORT_TOKEN</code>
-        </li>
-        <li>광고 계정 ID(<code>act_XXXXXXXXX</code>)를 확인합니다.</li>
-        <li>발급받은 토큰과 계정 ID를 <code>config.json</code>에 저장하면 대시보드에 소재별 성과가 자동 연동됩니다.</li>
-      </ol>
-    </div>
+
+    <!-- 소재 랭킹 카드 -->
+    <div id="metaAdCards" class="meta-placeholder"></div>
+
+    <!-- 인사이트 -->
+    <div id="metaInsights" style="display:none;margin-top:20px;"></div>
   </div>
 
   <div class="footer">광고 성과 대시보드 &middot; 데이터 기준: 2026-03-25 21:09</div>
@@ -581,6 +575,172 @@ function renderInsights(cur, prev) {
     '<div class="insight-item ' + classMap[i.type] + '"><span class="icon">' + iconMap[i.type] + "</span><span>" + i.text + "</span></div>"
   ).join("");
 }
+
+// ============================================================
+// 메타 API 실데이터 연동
+// ============================================================
+let metaData = null;
+
+fetch("dashboard_data.json")
+  .then(r => r.json())
+  .then(data => {
+    metaData = data;
+    document.getElementById("lastUpdated").textContent = "마지막 업데이트: " + data.last_updated;
+    renderMeta();
+  })
+  .catch(e => console.log("dashboard_data.json 로드 실패:", e));
+
+function findMetaBrand(brandName) {
+  if (!metaData || !metaData.brands) return null;
+  // 정확히 일치
+  if (metaData.brands[brandName]) return metaData.brands[brandName];
+  // 부분 일치
+  for (const key of Object.keys(metaData.brands)) {
+    if (key.includes(brandName) || brandName.includes(key)) return metaData.brands[key];
+    const short = key.replace(/X크로우드|x크로우드|임시|\(.*\)|_\d+|前.*/g,"").trim();
+    if (short === brandName || brandName.includes(short)) return metaData.brands[key];
+  }
+  // __meta__ prefix 처리
+  if (brandName.startsWith("__meta__")) {
+    const metaKey = brandName.replace("__meta__","");
+    return metaData.brands[metaKey] || null;
+  }
+  return null;
+}
+
+function renderMeta() {
+  const brand = currentBrand;
+  const bd = findMetaBrand(brand);
+  const badge = document.getElementById("metaBadge");
+  const cards = document.getElementById("metaAdCards");
+  const appealDiv = document.getElementById("appealSummary");
+  const insightDiv = document.getElementById("metaInsights");
+
+  if (!bd || !bd.ads || bd.ads.length === 0) {
+    badge.style.display = "inline";
+    badge.textContent = "데이터 없음";
+    badge.style.background = "rgba(255,82,82,0.2)";
+    badge.style.color = "#ff5252";
+    cards.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim);">이 브랜드는 메타 API 데이터가 없습니다.</div>';
+    appealDiv.style.display = "none";
+    insightDiv.style.display = "none";
+    return;
+  }
+
+  // 뱃지 업데이트
+  badge.style.display = "inline";
+  badge.textContent = "연동완료 ✅";
+  badge.style.background = "rgba(0,200,83,0.15)";
+  badge.style.color = "#00c853";
+
+  // 활성 소재만 (소진액 기준 정렬)
+  const activeAds = bd.ads.filter(a => a.spend > 0).sort((a,b) => b.spend - a.spend);
+
+  // 소재 카드 렌더링
+  cards.innerHTML = activeAds.slice(0,12).map((ad, idx) => {
+    const gradeColor = ad.grade.includes("우수") ? "var(--green)" : ad.grade.includes("부진") ? "var(--red)" : ad.grade.includes("보통") ? "var(--yellow)" : "var(--text-dim)";
+    const appeals = (ad.appeal_points || []).slice(0,2).join(" ");
+    const thumbStyle = ad.thumbnail_url
+      ? 'background-image:url(' + ad.thumbnail_url + ');background-size:cover;background-position:center;'
+      : 'background:var(--accent);';
+    const typeIcon = ad.creative_type === "영상" ? "🎬" : "🖼️";
+
+    return '<div class="meta-ad-card" style="cursor:default;">' +
+      '<div class="thumb" style="' + thumbStyle + 'position:relative;min-height:160px;">' +
+        '<span style="position:absolute;top:8px;left:8px;background:rgba(0,0,0,0.7);padding:2px 8px;border-radius:4px;font-size:11px;">' + typeIcon + ' #' + (idx+1) + '</span>' +
+        '<span style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.7);padding:2px 8px;border-radius:4px;font-size:11px;color:' + gradeColor + ';">' + ad.grade + '</span>' +
+      '</div>' +
+      '<div style="padding:10px;">' +
+        '<div style="font-size:12px;font-weight:600;margin-bottom:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + ad.ad_name + '</div>' +
+        '<div class="metrics" style="font-size:11px;color:var(--text-dim);">' +
+          'CPC: ' + fmt(ad.cpc, "money") + ' | CTR: ' + fmt(ad.ctr, "pct") + '</div>' +
+        '<div class="metrics" style="font-size:11px;color:var(--text-dim);margin-top:2px;">' +
+          '소진: ' + fmt(ad.spend, "money") + ' | 클릭: ' + fmt(ad.clicks, "int") + '</div>' +
+        (appeals ? '<div style="font-size:11px;margin-top:4px;">' + appeals + '</div>' : '') +
+      '</div>' +
+    '</div>';
+  }).join("");
+
+  // 소구점별 성과
+  if (bd.insights && bd.insights.appeal_performance) {
+    const ap = bd.insights.appeal_performance;
+    const keys = Object.keys(ap).sort((a,b) => ap[b].avg_ctr - ap[a].avg_ctr);
+    if (keys.length > 0) {
+      appealDiv.style.display = "block";
+      const maxCtr = Math.max(...keys.map(k => ap[k].avg_ctr || 0), 1);
+      document.getElementById("appealBars").innerHTML = keys.map(k => {
+        const p = ap[k];
+        const pct = ((p.avg_ctr || 0) / maxCtr * 100).toFixed(0);
+        return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">' +
+          '<span style="min-width:120px;font-size:13px;">' + k + '</span>' +
+          '<div style="flex:1;background:var(--accent);border-radius:4px;height:20px;overflow:hidden;">' +
+            '<div style="width:' + pct + '%;background:linear-gradient(90deg,var(--highlight),var(--blue));height:100%;border-radius:4px;"></div>' +
+          '</div>' +
+          '<span style="min-width:80px;font-size:12px;color:var(--text-dim);">CTR ' + (p.avg_ctr||0).toFixed(2) + '%</span>' +
+          '<span style="min-width:60px;font-size:12px;color:var(--text-dim);">' + p.count + '개</span>' +
+        '</div>';
+      }).join("");
+    } else { appealDiv.style.display = "none"; }
+  }
+
+  // 인사이트
+  if (bd.insights) {
+    insightDiv.style.display = "block";
+    const ins = bd.insights;
+    let html = '<div style="background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px;">';
+    html += '<h4 style="font-size:15px;margin-bottom:14px;color:var(--highlight);">🧠 자동 분석 인사이트</h4>';
+
+    // 요약
+    if (ins.summary) {
+      const s = ins.summary;
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:16px;">';
+      html += '<div style="background:var(--accent);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:11px;color:var(--text-dim);">총 소진</div><div style="font-size:18px;font-weight:700;">' + fmt(s.total_spend,"money") + '</div></div>';
+      html += '<div style="background:var(--accent);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:11px;color:var(--text-dim);">총 클릭</div><div style="font-size:18px;font-weight:700;">' + fmt(s.total_clicks,"int") + '</div></div>';
+      html += '<div style="background:var(--accent);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:11px;color:var(--text-dim);">평균 CPC</div><div style="font-size:18px;font-weight:700;">' + fmt(s.avg_cpc,"money") + '</div></div>';
+      html += '<div style="background:var(--accent);padding:12px;border-radius:8px;text-align:center;"><div style="font-size:11px;color:var(--text-dim);">평균 CTR</div><div style="font-size:18px;font-weight:700;">' + fmt(s.avg_ctr,"pct") + '</div></div>';
+      html += '</div>';
+    }
+
+    // TOP 소재
+    if (ins.top_ad) {
+      html += '<div style="padding:10px 14px;background:rgba(0,200,83,0.1);border-radius:8px;margin-bottom:8px;font-size:13px;">🏆 <strong>TOP 소재:</strong> ' + ins.top_ad.name + ' (CTR ' + ins.top_ad.ctr.toFixed(2) + '%, CPC ' + fmt(ins.top_ad.cpc,"money") + ')</div>';
+    }
+
+    // 등급 분포
+    if (ins.grade_distribution) {
+      const g = ins.grade_distribution;
+      html += '<div style="font-size:13px;margin:10px 0;color:var(--text-dim);">소재 등급: 🟢 우수 ' + (g["🟢 우수"]||0) + '개 | 🟡 보통 ' + (g["🟡 보통"]||0) + '개 | 🔴 부진 ' + (g["🔴 부진"]||0) + '개 | ⚫ 학습 ' + (g["⚫ 학습중"]||0) + '개</div>';
+    }
+
+    // 피로도 경고
+    if (ins.fatigue_alerts && ins.fatigue_alerts.length > 0) {
+      html += '<div style="margin-top:10px;">';
+      ins.fatigue_alerts.forEach(a => {
+        html += '<div style="padding:8px 12px;background:rgba(255,82,82,0.1);border-radius:6px;margin-bottom:6px;font-size:12px;">' + a + '</div>';
+      });
+      html += '</div>';
+    }
+
+    // 개선방안
+    if (ins.improvements && ins.improvements.length > 0) {
+      html += '<div style="margin-top:12px;"><div style="font-size:13px;font-weight:600;margin-bottom:8px;">🔧 개선방안</div>';
+      ins.improvements.forEach(imp => {
+        html += '<div style="padding:8px 12px;background:rgba(68,138,255,0.1);border-radius:6px;margin-bottom:6px;font-size:12px;">' + imp + '</div>';
+      });
+      html += '</div>';
+    }
+
+    html += '</div>';
+    insightDiv.innerHTML = html;
+  }
+}
+
+// 브랜드 변경 시 메타 섹션도 갱신
+const origOnBrandChange = onBrandChange;
+onBrandChange = function() {
+  origOnBrandChange();
+  if (metaData) renderMeta();
+};
 </script>
 </body>
 </html>
