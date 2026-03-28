@@ -196,15 +196,73 @@ let chartInstance = null;
 // ============================================================
 // 초기화
 // ============================================================
+// 메타 API 연동된 브랜드 목록
+const META_BRANDS = ["느루집", "고봉당X크로우드", "그릭베리250324(前마라섬_250311/前전지적밥상시점,前와드와 교환)", "퐁치 임시", "박만배아리랑보쌈_250522(前이자와 임시)", "두보250331(前미스타교자)", "쌍팔반점 임시 (前 전밥시3)", "가장맛있는치킨 (前 한강로/제육집)", "크로우드FC & DwellFS (前와드커피_트래픽)", "소림마라", "미스타교자2", "도르무르 스튜디오", "뵈르뵈르", "동경규동", "돌브랜즈前제육집막내아들前보드람치킨", "정희x크로우드", "하이콴", "다이클로", "육거리소문난만두", "설문동본갈비X크로우드", "삼동소바(0210)"];
+
+// 메타 연동 여부 매칭 (스프레드시트 브랜드명 → 메타 계정명)
+const META_MATCH = {};
+BRANDS.forEach(b => {
+  const found = META_BRANDS.find(m => m.includes(b) || b.includes(m) || m.replace(/X크로우드|x크로우드|\(.*\)/g,'').trim() === b);
+  if (found) META_MATCH[b] = found;
+});
+// 메타에만 있는 브랜드도 추가
+META_BRANDS.forEach(m => {
+  const alreadyMatched = Object.values(META_MATCH).includes(m);
+  if (!alreadyMatched) {
+    const shortName = m.replace(/X크로우드|x크로우드|\(.*\)|_\d+|임시|前.*/g,'').trim();
+    const found = BRANDS.find(b => m.includes(b) || shortName === b);
+    if (found) META_MATCH[found] = m;
+  }
+});
+
 (function init() {
   const sel = document.getElementById("brandSelect");
+
+  // 메타 연동 브랜드
+  const metaGroup = document.createElement("optgroup");
+  metaGroup.label = "🟢 메타 API 연동";
+  metaGroup.style.fontWeight = "bold";
+
+  // 미연동 브랜드
+  const noMetaGroup = document.createElement("optgroup");
+  noMetaGroup.label = "⬜ 스프레드시트만";
+
+  // 메타에만 있는 브랜드 (스프레드시트에 없음)
+  const metaOnlyGroup = document.createElement("optgroup");
+  metaOnlyGroup.label = "📊 메타 API만 (신규)";
+
+  const matchedMeta = new Set(Object.values(META_MATCH));
+
   BRANDS.forEach(b => {
     const opt = document.createElement("option");
-    opt.value = b; opt.textContent = b;
-    sel.appendChild(opt);
+    opt.value = b;
+    if (META_MATCH[b]) {
+      opt.textContent = "🟢 " + b;
+      metaGroup.appendChild(opt);
+    } else {
+      opt.textContent = "⬜ " + b;
+      noMetaGroup.appendChild(opt);
+    }
   });
+
+  META_BRANDS.forEach(m => {
+    if (!matchedMeta.has(m)) {
+      const opt = document.createElement("option");
+      opt.value = "__meta__" + m;
+      opt.textContent = "📊 " + m;
+      metaOnlyGroup.appendChild(opt);
+    }
+  });
+
+  if (metaGroup.children.length > 0) sel.appendChild(metaGroup);
+  if (metaOnlyGroup.children.length > 0) sel.appendChild(metaOnlyGroup);
+  if (noMetaGroup.children.length > 0) sel.appendChild(noMetaGroup);
+
   if (BRANDS.length > 0) {
-    sel.value = BRANDS[0];
+    // 메타 연동 브랜드 중 첫번째를 기본 선택
+    const firstMeta = BRANDS.find(b => META_MATCH[b]);
+    sel.value = firstMeta || BRANDS[0];
+    currentBrand = sel.value;
     render();
   }
 })();
