@@ -39,7 +39,7 @@ export default function middleware(request) {
   const token = getCookieValue(cookie, COOKIE_NAME);
   const validToken = generateToken(
     process.env.AUTH_USER || "admin",
-    process.env.AUTH_PASS || "crowedslave2026!"
+    process.env.AUTH_PASS || "crow1212!!"
   );
 
   if (token !== validToken) {
@@ -60,7 +60,7 @@ async function handleLogin(request) {
     const password = params.get("password");
 
     const validUser = process.env.AUTH_USER || "admin";
-    const validPass = process.env.AUTH_PASS || "crowedslave2026!";
+    const validPass = process.env.AUTH_PASS || "crow1212!!";
 
     if (username === validUser && password === validPass) {
       const token = generateToken(validUser, validPass);
